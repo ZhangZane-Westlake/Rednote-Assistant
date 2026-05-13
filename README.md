@@ -43,8 +43,22 @@ python app_gui.py
 
 ## 数据存储与隐私
 
-- 笔记数据：`notes.db`（SQLite，本地文件）
-- 博主画像：存储在数据库中，Markdown 格式，可手动编辑
+当前版本使用用户主目录下的隐藏数据目录，不读取项目根目录里的 `notes.db`：
+
+```text
+~/.xhs-assistant/
+├── master.db                 # 主数据库：账号列表、当前账号指针
+└── accounts/
+    └── <account_id>/
+        └── notes.db          # 账号笔记数据库：笔记、配置、博主画像等
+```
+
+说明：
+
+- `~/.xhs-assistant/master.db` 是应用启动时读取的入口数据库
+- 当前账号的笔记数据存储在 `~/.xhs-assistant/accounts/<account_id>/notes.db`
+- 如果旧版 `~/.xhs-assistant/notes.db` 存在，首次初始化时会迁移到默认账号目录
+- 项目根目录下的 `notes.db` 不再作为当前版本的数据源，也已在 `.gitignore` 中忽略
 - 所有数据默认保存在本地
 - 调用 DeepSeek API 时，会发送用于分析的笔记内容到 DeepSeek 服务
 
@@ -68,7 +82,7 @@ python app_gui.py
 ├── static/                # 前端静态资源
 ├── templates/             # HTML 模板
 ├── mac/                   # macOS 打包脚本与资源
-└── notes.db               # 本地 SQLite 数据库（运行时生成，已在 .gitignore 中忽略）
+└── ~/.xhs-assistant/      # 本地运行数据目录（不会提交到 Git）
 ```
 
 ## macOS 打包（DMG）
