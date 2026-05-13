@@ -180,7 +180,32 @@ function clearForm() {
   ['f-views','f-likes','f-saves','f-comments','f-shares'].forEach(x => document.getElementById(x).value = '0');
   document.getElementById('f-type').value = 'photo';
   const noteFiles = document.getElementById('note-image-files');
-  if (noteFiles) noteFiles.value = '';
+  if (noteFiles) {
+    noteFiles.value = '';
+    updateImageFileLabel('note-image-files');
+  }
+}
+
+function updateImageFileLabel(fileInputId) {
+  const input = document.getElementById(fileInputId);
+  const label = document.getElementById(`${fileInputId}-label`);
+  if (!input || !label) return;
+
+  const count = input.files ? input.files.length : 0;
+  if (count === 0) {
+    label.textContent = '未选择图片';
+  } else if (count === 1) {
+    label.textContent = input.files[0].name || '已选择 1 张图片';
+  } else {
+    label.textContent = `已选择 ${count} 张图片`;
+  }
+}
+
+function bindImageFileLabel(fileInputId) {
+  const input = document.getElementById(fileInputId);
+  if (!input) return;
+  input.addEventListener('change', () => updateImageFileLabel(fileInputId));
+  updateImageFileLabel(fileInputId);
 }
 
 async function describeSelectedImages(fileInputId, targetTextareaId, buttonId) {
@@ -901,3 +926,5 @@ async function deleteAccount(accountId, name) {
 loadAccounts();
 loadNotes();
 loadChatHistory();
+bindImageFileLabel('note-image-files');
+bindImageFileLabel('content-image-files');

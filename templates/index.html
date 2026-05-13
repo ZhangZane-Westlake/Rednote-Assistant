@@ -69,7 +69,11 @@
       <div class="form-row">
         <label>图片描述</label>
         <div class="vision-upload-row">
-          <input type="file" id="note-image-files" accept="image/*" multiple>
+          <div class="file-picker">
+            <input type="file" id="note-image-files" accept="image/*" multiple>
+            <label for="note-image-files" class="file-picker-button">选择图片</label>
+            <span id="note-image-files-label" class="file-picker-label">未选择图片</span>
+          </div>
           <button type="button" id="btn-describe-note-images" class="btn-ghost">🖼️ AI 识图填充</button>
         </div>
         <textarea id="f-images" rows="3" placeholder="图1: 拿铁俯拍
@@ -184,7 +188,11 @@
       <div class="form-row">
         <label>📷 描述你的照片/视频内容 <span class="required">*</span></label>
         <div class="vision-upload-row">
-          <input type="file" id="content-image-files" accept="image/*" multiple>
+          <div class="file-picker">
+            <input type="file" id="content-image-files" accept="image/*" multiple>
+            <label for="content-image-files" class="file-picker-button">选择图片</label>
+            <span id="content-image-files-label" class="file-picker-label">未选择图片</span>
+          </div>
           <button type="button" id="btn-describe-content-images" class="btn-ghost">🖼️ AI 识图填充</button>
         </div>
         <textarea id="content-description" rows="6"

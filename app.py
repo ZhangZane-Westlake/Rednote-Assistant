@@ -1,5 +1,6 @@
 """Flask backend for XHS Assistant."""
 
+import io
 import json
 import traceback
 from flask import Flask, request, jsonify, render_template
@@ -13,6 +14,10 @@ app = Flask(__name__)
 CORS(app)
 
 db.init_db()
+
+APP_HOST = "127.0.0.1"
+APP_PORT = 5001
+APP_URL = f"http://{APP_HOST}:{APP_PORT}"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -28,6 +33,7 @@ DEFAULT_VISION_TEMPERATURE = "0.2"
 DEFAULT_VISION_MAX_TOKENS = "2048"
 MAX_VISION_IMAGES = 9
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+TARGET_VISION_IMAGE_BYTES = 1 * 1024 * 1024
 
 
 def _cfg(key: str, default: str = "") -> str:
@@ -67,6 +73,48 @@ def _vision_settings():
         "max_tokens": _to_int(_cfg("vision_max_tokens", DEFAULT_VISION_MAX_TOKENS), 2048),
         "prompt": _cfg("vision_prompt", DEFAULT_VISION_PROMPT),
     }
+
+
+def _compress_image_for_vision(content: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Compress oversized uploads before sending them to the vision model."""
+    if len(content) <= TARGET_VISION_IMAGE_BYTES:
+        return content, mime_type or "image/jpeg"
+
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(io.BytesIO(content)) as image:
+            image = ImageOps.exif_transpose(image)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
+            max_side = max(image.size)
+            quality = 85
+            while True:
+                output = io.BytesIO()
+                image.save(output, format="JPEG", quality=quality, optimize=True)
+                compressed = output.getvalue()
+                if len(compressed) <= TARGET_VISION_IMAGE_BYTES:
+                    return compressed, "image/jpeg"
+
+                if quality > 45:
+                    quality -= 10
+                    continue
+
+                if max_side <= 768:
+                    return compressed, "image/jpeg"
+
+                scale = max(0.65, (TARGET_VISION_IMAGE_BYTES / len(compressed)) ** 0.5 * 0.92)
+                max_side = max(768, int(max_side * scale))
+                ratio = max_side / max(image.size)
+                new_size = (
+                    max(1, int(image.size[0] * ratio)),
+                    max(1, int(image.size[1] * ratio)),
+                )
+                image = image.resize(new_size, Image.Resampling.LANCZOS)
+                quality = 85
+    except Exception as exc:
+        raise ValueError(f"图片压缩失败: {exc}") from exc
 
 
 # ═══════════════════════════════════════════════════════════
@@ -547,6 +595,10 @@ def api_vision_describe():
             return jsonify({"error": f"{filename} 内容为空"}), 400
         if len(content) > MAX_IMAGE_BYTES:
             return jsonify({"error": f"{filename} 超过 10MB 限制"}), 400
+        try:
+            content, mime_type = _compress_image_for_vision(content, mime_type)
+        except ValueError as e:
+            return jsonify({"error": f"{filename} {str(e)}"}), 400
         images.append({"filename": filename, "mime_type": mime_type, "bytes": content})
 
     prompt = (request.form.get("prompt") or settings["prompt"] or DEFAULT_VISION_PROMPT).strip()
@@ -635,5 +687,5 @@ def api_clear_module():
 
 if __name__ == "__main__":
     print("📕 小红书笔记助手启动中...")
-    print("   打开浏览器访问 http://localhost:5001")
-    app.run(debug=True, host="127.0.0.1", port=5001)
+    print(f"   打开浏览器访问 {APP_URL}")
+    app.run(debug=True, host=APP_HOST, port=APP_PORT)
