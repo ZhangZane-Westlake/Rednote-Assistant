@@ -797,6 +797,58 @@ document.getElementById('btn-save-settings').addEventListener('click', async () 
   toast('设置已保存');
 });
 
+async function loadModelSettingsFile() {
+  const editor = document.getElementById('model-settings-editor');
+  const textarea = document.getElementById('model-settings-file-content');
+  const btn = document.getElementById('btn-edit-model-settings');
+  if (!editor || !textarea || !btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = '加载中…';
+  try {
+    const resp = await fetch('/api/settings/model-file');
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      toast(data.error || '加载 setting 文件失败');
+      return;
+    }
+    textarea.value = data.content || '';
+    editor.style.display = 'block';
+    textarea.focus();
+  } catch (e) {
+    toast('加载 setting 文件失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function saveModelSettingsFile() {
+  const textarea = document.getElementById('model-settings-file-content');
+  if (!textarea) return;
+
+  const resp = await fetch('/api/settings/model-file', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ content: textarea.value }),
+  });
+  const data = await resp.json();
+  if (!resp.ok || data.error) {
+    toast(data.error || '保存 setting 文件失败');
+    return;
+  }
+  textarea.value = data.content || textarea.value;
+  await loadSettings();
+  toast('setting 文件已保存');
+}
+
+document.getElementById('btn-edit-model-settings').addEventListener('click', loadModelSettingsFile);
+document.getElementById('btn-save-model-settings').addEventListener('click', saveModelSettingsFile);
+document.getElementById('btn-cancel-model-settings').addEventListener('click', () => {
+  document.getElementById('model-settings-editor').style.display = 'none';
+});
+
 // Clear per-module data
 document.querySelectorAll('.btn-clear').forEach(btn => {
   btn.addEventListener('click', async () => {

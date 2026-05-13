@@ -75,6 +75,57 @@ def _vision_settings():
     }
 
 
+def _model_settings_file_data() -> dict:
+    """Return the model-call settings as an editable JSON-like object."""
+    return {
+        "deepseek": {
+            "api_key": db.get_config("deepseek_api_key", ""),
+            "base_url": db.get_config("deepseek_base_url", DEFAULT_TEXT_BASE_URL),
+            "model": db.get_config("deepseek_model", DEFAULT_TEXT_MODEL),
+            "temperature": _to_float(db.get_config("deepseek_temperature", DEFAULT_TEXT_TEMPERATURE), 0.7),
+            "max_tokens": _to_int(db.get_config("deepseek_max_tokens", DEFAULT_TEXT_MAX_TOKENS), 4096),
+        },
+        "vision": {
+            "api_key": db.get_config("vision_api_key", ""),
+            "base_url": db.get_config("vision_base_url", ""),
+            "model": db.get_config("vision_model", DEFAULT_VISION_MODEL),
+            "temperature": _to_float(db.get_config("vision_temperature", DEFAULT_VISION_TEMPERATURE), 0.2),
+            "max_tokens": _to_int(db.get_config("vision_max_tokens", DEFAULT_VISION_MAX_TOKENS), 2048),
+            "prompt": db.get_config("vision_prompt", DEFAULT_VISION_PROMPT),
+        },
+    }
+
+
+def _apply_model_settings_file_data(settings: dict):
+    """Persist supported keys from the editable model settings object."""
+    mappings = {
+        "deepseek": {
+            "api_key": "deepseek_api_key",
+            "base_url": "deepseek_base_url",
+            "model": "deepseek_model",
+            "temperature": "deepseek_temperature",
+            "max_tokens": "deepseek_max_tokens",
+        },
+        "vision": {
+            "api_key": "vision_api_key",
+            "base_url": "vision_base_url",
+            "model": "vision_model",
+            "temperature": "vision_temperature",
+            "max_tokens": "vision_max_tokens",
+            "prompt": "vision_prompt",
+        },
+    }
+    for section, keys in mappings.items():
+        values = settings.get(section, {})
+        if values is None:
+            values = {}
+        if not isinstance(values, dict):
+            raise ValueError(f"{section} 必须是对象")
+        for source_key, config_key in keys.items():
+            if source_key in values:
+                db.set_config(config_key, str(values[source_key]))
+
+
 def _compress_image_for_vision(content: bytes, mime_type: str) -> tuple[bytes, str]:
     """Compress oversized uploads before sending them to the vision model."""
     if len(content) <= TARGET_VISION_IMAGE_BYTES:
@@ -656,6 +707,40 @@ def api_save_settings():
         if key in data:
             db.set_config(key, str(data[key]))
     return jsonify({"ok": True})
+
+
+@app.route("/api/settings/model-file", methods=["GET"])
+def api_get_model_settings_file():
+    settings = _model_settings_file_data()
+    return jsonify({
+        "filename": "model_settings.json",
+        "content": json.dumps(settings, ensure_ascii=False, indent=2),
+        "settings": settings,
+    })
+
+
+@app.route("/api/settings/model-file", methods=["PUT"])
+def api_save_model_settings_file():
+    data = request.get_json(force=True)
+    content = data.get("content", "")
+    try:
+        settings = json.loads(content)
+    except json.JSONDecodeError as e:
+        return jsonify({"error": f"JSON 格式错误: {e.msg}"}), 400
+    if not isinstance(settings, dict):
+        return jsonify({"error": "JSON 根节点必须是对象"}), 400
+
+    try:
+        _apply_model_settings_file_data(settings)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    saved = _model_settings_file_data()
+    return jsonify({
+        "ok": True,
+        "filename": "model_settings.json",
+        "content": json.dumps(saved, ensure_ascii=False, indent=2),
+        "settings": saved,
+    })
 
 
 @app.route("/api/settings/clear", methods=["POST"])

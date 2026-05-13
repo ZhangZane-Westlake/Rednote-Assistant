@@ -323,6 +323,24 @@
     <button id="btn-save-settings" class="btn-primary">💾 保存设置</button>
 
     <div class="card" style="margin-top:24px">
+      <h3>🧩 模型调用 setting 文件</h3>
+      <p class="settings-hint">以 JSON 文件形式编辑文本模型和视觉模型调用参数。保存后会同步更新上方模型配置。</p>
+      <div class="form-actions">
+        <button type="button" id="btn-edit-model-settings" class="btn-ghost">📝 编辑模型调用 setting 文件</button>
+      </div>
+      <div id="model-settings-editor" class="model-settings-editor" style="display:none">
+        <div class="form-row">
+          <label>model_settings.json</label>
+          <textarea id="model-settings-file-content" rows="18" spellcheck="false" placeholder="加载 setting 文件中…"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="btn-save-model-settings" class="btn-primary">💾 保存 setting 文件</button>
+          <button type="button" id="btn-cancel-model-settings" class="btn-ghost">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
       <h3>👥 账号管理</h3>
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">不同账号的数据（笔记、画像、分析、创作历史）完全隔离</p>
       <div class="account-manage">
