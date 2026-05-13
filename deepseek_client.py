@@ -6,8 +6,22 @@ from openai import OpenAI
 BASE_URL = "https://api.deepseek.com/v1"
 
 
-def _get_client(api_key: str) -> OpenAI:
-    return OpenAI(api_key=api_key, base_url=BASE_URL)
+def _get_client(api_key: str, base_url: str = BASE_URL) -> OpenAI:
+    return OpenAI(api_key=api_key, base_url=base_url or BASE_URL)
+
+
+def _float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _notes_to_text(notes: list[dict]) -> str:
@@ -87,25 +101,27 @@ PROFILE_PROMPT = """你是一位小红书内容分析师。请根据以下博主
 {notes_text}"""
 
 
-def generate_profile(notes: list[dict], api_key: str, bio: str = "", extra: str = "") -> str:
+def generate_profile(notes: list[dict], api_key: str, base_url: str = BASE_URL,
+                     model: str = "deepseek-chat", temperature=0.5,
+                     max_tokens=4096, bio: str = "", extra: str = "") -> str:
     """Generate blogger profile in Markdown. Returns profile text."""
     if not notes:
         return "# 博主画像\n\n暂无笔记数据。请先在「笔记管理」中添加笔记。"
 
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
     notes_text = _notes_to_text(notes)
     context = _build_context(bio, extra)
 
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model=model or "deepseek-chat",
         messages=[
             {"role": "system", "content": "你是一位专业的小红书内容分析专家。"},
             {"role": "user", "content": PROFILE_PROMPT.format(
                 notes_text=notes_text, context=context
             )},
         ],
-        temperature=0.5,
-        max_tokens=4096,
+        temperature=_float(temperature, 0.5),
+        max_tokens=_int(max_tokens, 4096),
     )
     return response.choices[0].message.content.strip()
 
@@ -146,25 +162,27 @@ SUGGESTION_PROMPT = """你是一位小红书内容策划师。请根据博主的
 
 
 def generate_suggestions(notes: list[dict], profile: str, api_key: str,
+                         base_url: str = BASE_URL, model: str = "deepseek-chat",
+                         temperature=0.8, max_tokens=4096,
                          bio: str = "", extra: str = "") -> str:
     """Generate 5 content suggestions in Markdown."""
     if not notes:
         return "暂无笔记数据，无法生成选题建议。"
 
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
     notes_text = _notes_to_text(notes[:10])
     context = _build_context(bio, extra)
 
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model=model or "deepseek-chat",
         messages=[
             {"role": "system", "content": "你是一位专业的小红书内容策划师。"},
             {"role": "user", "content": SUGGESTION_PROMPT.format(
                 profile=profile, notes_text=notes_text, context=context
             )},
         ],
-        temperature=0.8,
-        max_tokens=4096,
+        temperature=_float(temperature, 0.8),
+        max_tokens=_int(max_tokens, 4096),
     )
     return response.choices[0].message.content.strip()
 
@@ -204,25 +222,27 @@ ANALYSIS_PROMPT = """你是一位小红书数据分析师。请根据以下笔�
 """
 
 
-def deep_analyze(notes: list[dict], api_key: str, bio: str = "", extra: str = "") -> str:
+def deep_analyze(notes: list[dict], api_key: str, base_url: str = BASE_URL,
+                 model: str = "deepseek-chat", temperature=0.5,
+                 max_tokens=4096, bio: str = "", extra: str = "") -> str:
     """Deep analysis of note performance."""
     if not notes:
         return "暂无笔记数据，无法分析。"
 
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
     notes_text = _notes_to_text(notes)
     context = _build_context(bio, extra)
 
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model=model or "deepseek-chat",
         messages=[
             {"role": "system", "content": "你是一位小红书运营数据分析师。"},
             {"role": "user", "content": ANALYSIS_PROMPT.format(
                 notes_text=notes_text, context=context
             )},
         ],
-        temperature=0.5,
-        max_tokens=4096,
+        temperature=_float(temperature, 0.5),
+        max_tokens=_int(max_tokens, 4096),
     )
     return response.choices[0].message.content.strip()
 
@@ -256,13 +276,15 @@ CONTENT_CREATION_PROMPT = """你是一位小红书内容创作专家。用户提
 
 
 def generate_content(description: str, api_key: str, profile: str = "",
-                     bio: str = "", extra: str = "") -> dict:
+                     bio: str = "", extra: str = "", base_url: str = BASE_URL,
+                     model: str = "deepseek-chat", temperature=0.75,
+                     max_tokens=4096) -> dict:
     """根据照片/视频描述生成风格建议和笔记正文。
     Returns {"style_advice": "...", "body_text": "..."}"""
     if not description or not description.strip():
         return {"error": "请提供照片/视频的描述内容"}
 
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     context_parts = []
     if bio and bio.strip():
@@ -275,7 +297,7 @@ def generate_content(description: str, api_key: str, profile: str = "",
     context = "\n\n".join(context_parts)
 
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model=model or "deepseek-chat",
         messages=[
             {"role": "system", "content": "你是一位专业的小红书内容创作专家，擅长视觉风格设计和文案撰写。"},
             {"role": "user", "content": CONTENT_CREATION_PROMPT.format(
@@ -283,8 +305,8 @@ def generate_content(description: str, api_key: str, profile: str = "",
                 context=context,
             )},
         ],
-        temperature=0.75,
-        max_tokens=4096,
+        temperature=_float(temperature, 0.75),
+        max_tokens=_int(max_tokens, 4096),
     )
     full = response.choices[0].message.content.strip()
 
@@ -318,11 +340,12 @@ CHAT_SYSTEM_PROMPT = """你是一位小红书运营顾问，精通内容创作�
 
 
 def chat(api_key: str, messages: list[dict], notes_context: str = "",
-         profile_context: str = "", bio: str = "") -> str:
+         profile_context: str = "", bio: str = "", base_url: str = BASE_URL,
+         model: str = "deepseek-chat", temperature=0.8, max_tokens=2048) -> str:
     """自由对话，支持多轮。messages 格式: [{"role":"user","content":"..."}, ...]
     注意：messages 只应包含最近的对话轮次（不含 system prompt）。
     """
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     # Build system prompt with context
     context_blocks = []
@@ -340,9 +363,9 @@ def chat(api_key: str, messages: list[dict], notes_context: str = "",
     full_messages = [{"role": "system", "content": system_content}] + messages
 
     response = client.chat.completions.create(
-        model="deepseek-chat",
+        model=model or "deepseek-chat",
         messages=full_messages,
-        temperature=0.8,
-        max_tokens=2048,
+        temperature=_float(temperature, 0.8),
+        max_tokens=_int(max_tokens, 2048),
     )
     return response.choices[0].message.content.strip()

@@ -68,6 +68,10 @@
       </div>
       <div class="form-row">
         <label>图片描述</label>
+        <div class="vision-upload-row">
+          <input type="file" id="note-image-files" accept="image/*" multiple>
+          <button type="button" id="btn-describe-note-images" class="btn-ghost">🖼️ AI 识图填充</button>
+        </div>
         <textarea id="f-images" rows="3" placeholder="图1: 拿铁俯拍
 图2: 店内环境…"></textarea>
       </div>
@@ -179,6 +183,10 @@
     <div class="card">
       <div class="form-row">
         <label>📷 描述你的照片/视频内容 <span class="required">*</span></label>
+        <div class="vision-upload-row">
+          <input type="file" id="content-image-files" accept="image/*" multiple>
+          <button type="button" id="btn-describe-content-images" class="btn-ghost">🖼️ AI 识图填充</button>
+        </div>
         <textarea id="content-description" rows="6"
           placeholder="描述你拍的照片或视频内容，例如：
 - 图1: 咖啡拿铁俯拍，木桌+阳光光斑
@@ -239,14 +247,60 @@
   <!-- ═══════════ 设置 ═══════════ -->
   <section id="tab-settings" class="tab-content">
     <div class="card">
-      <h3>API 配置</h3>
+      <h3>文本 LLM 配置（DeepSeek / OpenAI 兼容）</h3>
+      <p class="settings-hint">用于画像、选题、数据分析、内容创作和 AI 对话。Base URL 支持 DeepSeek 官方或任意 OpenAI 兼容服务。</p>
       <div class="form-row">
-        <label>DeepSeek API Key</label>
+        <label>API Key</label>
         <input type="password" id="s-apikey" placeholder="sk-...">
       </div>
       <div class="form-row">
         <label>Base URL</label>
-        <input id="s-baseurl" value="https://api.deepseek.com/v1" readonly disabled>
+        <input id="s-baseurl" placeholder="https://api.deepseek.com/v1">
+      </div>
+      <div class="settings-grid">
+        <div class="form-row">
+          <label>模型名</label>
+          <input id="s-model" placeholder="deepseek-chat">
+        </div>
+        <div class="form-row">
+          <label>Temperature</label>
+          <input id="s-temperature" type="number" min="0" max="2" step="0.1" placeholder="0.7">
+        </div>
+        <div class="form-row">
+          <label>Max Tokens</label>
+          <input id="s-max-tokens" type="number" min="1" step="1" placeholder="4096">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>图片识别配置（Gemma 4 / Vision）</h3>
+      <p class="settings-hint">用于识别上传图片并生成图片描述。请填写兼容 OpenAI Chat Completions 视觉输入格式的 Base URL、API Key 和模型名。</p>
+      <div class="form-row">
+        <label>Vision API Key</label>
+        <input type="password" id="s-vision-apikey" placeholder="sk-...">
+      </div>
+      <div class="form-row">
+        <label>Vision Base URL</label>
+        <input id="s-vision-baseurl" placeholder="https://your-vision-provider/v1">
+      </div>
+      <div class="settings-grid">
+        <div class="form-row">
+          <label>Vision 模型名</label>
+          <input id="s-vision-model" placeholder="gemma-4">
+        </div>
+        <div class="form-row">
+          <label>Temperature</label>
+          <input id="s-vision-temperature" type="number" min="0" max="2" step="0.1" placeholder="0.2">
+        </div>
+        <div class="form-row">
+          <label>Max Tokens</label>
+          <input id="s-vision-max-tokens" type="number" min="1" step="1" placeholder="2048">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>默认识图提示词</label>
+        <textarea id="s-vision-prompt" rows="6" placeholder="告诉图片识别模型应该如何描述图片…"></textarea>
       </div>
     </div>
 

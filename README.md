@@ -5,6 +5,7 @@
 ## 功能
 
 - 笔记管理：记录标题、文案、图片描述和互动数据
+- AI 识图：上传图片后调用 Gemma 4 / OpenAI 兼容视觉模型生成图片描述
 - 博主画像：基于历史笔记生成 Markdown 风格画像，并支持手动编辑
 - 选题建议：生成选题、拍摄思路和文案大纲
 - 数据分析：用图表和 LLM 深度分析复盘内容表现
@@ -35,11 +36,12 @@ python app_gui.py
 
 ## 使用流程
 
-1. 设置：填入 DeepSeek API Key（可从 `platform.deepseek.com` 获取）
-2. 笔记管理：逐篇添加笔记，包括标题、文案、图片描述、互动数据
+1. 设置：填入文本 LLM（DeepSeek / OpenAI 兼容）的 API Key、Base URL 和模型名；如需识图，再填入图片识别（Gemma 4 / Vision）的 API Key、Base URL 和模型名
+2. 笔记管理：逐篇添加笔记，包括标题、文案、图片描述、互动数据；也可以上传图片自动生成图片描述
 3. 博主画像：点击“重新生成”，AI 会根据所有笔记输出风格画像
 4. 选题建议：生成 5 个选题、拍摄思路和文案大纲
-5. 数据分析：查看图表，并点击“LLM 深度分析”获取 AI 复盘
+5. 内容创作：上传图片识图或手动描述素材后，生成风格建议和笔记正文
+6. 数据分析：查看图表，并点击“LLM 深度分析”获取 AI 复盘
 
 ## 数据存储与隐私
 
@@ -60,7 +62,8 @@ python app_gui.py
 - 如果旧版 `~/.xhs-assistant/notes.db` 存在，首次初始化时会迁移到默认账号目录
 - 项目根目录下的 `notes.db` 不再作为当前版本的数据源，也已在 `.gitignore` 中忽略
 - 所有数据默认保存在本地
-- 调用 DeepSeek API 时，会发送用于分析的笔记内容到 DeepSeek 服务
+- 调用文本 LLM API 时，会发送用于分析的笔记内容到用户配置的文本模型服务
+- 上传图片识图时，图片会发送到用户配置的图片识别模型服务；应用不会把上传图片长期保存到本地
 
 ## 技术栈
 
@@ -68,7 +71,7 @@ python app_gui.py
 - 数据库：SQLite
 - 前端：HTML、CSS、原生 JavaScript
 - 图表：Chart.js（CDN 加载）
-- AI：DeepSeek API（OpenAI 兼容接口）
+- AI：文本模型和视觉模型均使用 OpenAI 兼容接口（默认文本模型为 DeepSeek，默认视觉模型名为 Gemma 4）
 
 ## 项目结构
 
@@ -77,7 +80,8 @@ python app_gui.py
 ├── app.py                 # Flask Web 应用入口
 ├── app_gui.py             # GUI 启动入口
 ├── database.py            # SQLite 数据访问
-├── deepseek_client.py     # DeepSeek API 客户端
+├── deepseek_client.py     # 文本 LLM API 客户端
+├── vision_client.py       # 图片识别 / Vision API 客户端
 ├── requirements.txt       # Python 依赖
 ├── static/                # 前端静态资源
 ├── templates/             # HTML 模板

@@ -179,7 +179,54 @@ function clearForm() {
   ['f-title','f-topics','f-date','f-text','f-images','f-notes'].forEach(x => document.getElementById(x).value = '');
   ['f-views','f-likes','f-saves','f-comments','f-shares'].forEach(x => document.getElementById(x).value = '0');
   document.getElementById('f-type').value = 'photo';
+  const noteFiles = document.getElementById('note-image-files');
+  if (noteFiles) noteFiles.value = '';
 }
+
+async function describeSelectedImages(fileInputId, targetTextareaId, buttonId) {
+  const input = document.getElementById(fileInputId);
+  const target = document.getElementById(targetTextareaId);
+  const btn = document.getElementById(buttonId);
+  if (!input || !target || !btn) return;
+  if (!input.files || input.files.length === 0) {
+    toast('请先选择图片');
+    return;
+  }
+
+  const form = new FormData();
+  Array.from(input.files).forEach(file => form.append('images', file));
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>识图中…';
+
+  try {
+    const resp = await fetch('/api/vision/describe', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      toast(data.error || '识图失败');
+      return;
+    }
+    const combined = data.combined || '';
+    if (!combined) {
+      toast('未生成图片描述');
+      return;
+    }
+    const current = target.value.trim();
+    target.value = current ? `${current}\n\n${combined}` : combined;
+    target.focus();
+    toast('图片描述已生成');
+  } catch (e) {
+    toast('识图请求失败: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+document.getElementById('btn-describe-note-images').addEventListener('click', () => {
+  describeSelectedImages('note-image-files', 'f-images', 'btn-describe-note-images');
+});
 
 
 // ═══════════════════════════════════════════════════════════
@@ -490,6 +537,10 @@ document.getElementById('btn-copy-body').addEventListener('click', () => {
   navigator.clipboard.writeText(raw).then(() => toast('正文已复制到剪贴板 📋'));
 });
 
+document.getElementById('btn-describe-content-images').addEventListener('click', () => {
+  describeSelectedImages('content-image-files', 'content-description', 'btn-describe-content-images');
+});
+
 // Content creation history
 async function loadContentHistory() {
   const resp = await fetch('/api/content/history');
@@ -685,16 +736,38 @@ async function loadSettings() {
   const resp = await fetch('/api/settings');
   const data = await resp.json();
   document.getElementById('s-apikey').value = data.deepseek_api_key || '';
+  document.getElementById('s-baseurl').value = data.deepseek_base_url || 'https://api.deepseek.com/v1';
+  document.getElementById('s-model').value = data.deepseek_model || 'deepseek-chat';
+  document.getElementById('s-temperature').value = data.deepseek_temperature || '0.7';
+  document.getElementById('s-max-tokens').value = data.deepseek_max_tokens || '4096';
+  document.getElementById('s-vision-apikey').value = data.vision_api_key || '';
+  document.getElementById('s-vision-baseurl').value = data.vision_base_url || '';
+  document.getElementById('s-vision-model').value = data.vision_model || 'gemma-4';
+  document.getElementById('s-vision-temperature').value = data.vision_temperature || '0.2';
+  document.getElementById('s-vision-max-tokens').value = data.vision_max_tokens || '2048';
+  document.getElementById('s-vision-prompt').value = data.vision_prompt || '';
   document.getElementById('s-bio').value = data.blogger_bio || '';
 }
 
 document.getElementById('btn-save-settings').addEventListener('click', async () => {
-  const key = document.getElementById('s-apikey').value.trim();
-  const bio = document.getElementById('s-bio').value.trim();
+  const payload = {
+    deepseek_api_key: document.getElementById('s-apikey').value.trim(),
+    deepseek_base_url: document.getElementById('s-baseurl').value.trim(),
+    deepseek_model: document.getElementById('s-model').value.trim(),
+    deepseek_temperature: document.getElementById('s-temperature').value.trim(),
+    deepseek_max_tokens: document.getElementById('s-max-tokens').value.trim(),
+    vision_api_key: document.getElementById('s-vision-apikey').value.trim(),
+    vision_base_url: document.getElementById('s-vision-baseurl').value.trim(),
+    vision_model: document.getElementById('s-vision-model').value.trim(),
+    vision_temperature: document.getElementById('s-vision-temperature').value.trim(),
+    vision_max_tokens: document.getElementById('s-vision-max-tokens').value.trim(),
+    vision_prompt: document.getElementById('s-vision-prompt').value.trim(),
+    blogger_bio: document.getElementById('s-bio').value.trim(),
+  };
   await fetch('/api/settings', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ deepseek_api_key: key, blogger_bio: bio }),
+    body: JSON.stringify(payload),
   });
   toast('设置已保存');
 });

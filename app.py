@@ -7,11 +7,66 @@ from flask_cors import CORS
 
 import database as db
 from deepseek_client import generate_profile, generate_suggestions, deep_analyze, generate_content, chat
+from vision_client import DEFAULT_VISION_PROMPT, describe_images
 
 app = Flask(__name__)
 CORS(app)
 
 db.init_db()
+
+
+# ═══════════════════════════════════════════════════════════
+#  AI Settings helpers
+# ═══════════════════════════════════════════════════════════
+
+DEFAULT_TEXT_BASE_URL = "https://api.deepseek.com/v1"
+DEFAULT_TEXT_MODEL = "deepseek-chat"
+DEFAULT_TEXT_TEMPERATURE = "0.7"
+DEFAULT_TEXT_MAX_TOKENS = "4096"
+DEFAULT_VISION_MODEL = "gemma-4"
+DEFAULT_VISION_TEMPERATURE = "0.2"
+DEFAULT_VISION_MAX_TOKENS = "2048"
+MAX_VISION_IMAGES = 9
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+
+
+def _cfg(key: str, default: str = "") -> str:
+    return db.get_config(key, default)
+
+
+def _to_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _to_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _text_llm_settings(default_temperature=0.7, default_max_tokens=4096):
+    return {
+        "api_key": _cfg("deepseek_api_key", ""),
+        "base_url": _cfg("deepseek_base_url", DEFAULT_TEXT_BASE_URL),
+        "model": _cfg("deepseek_model", DEFAULT_TEXT_MODEL),
+        "temperature": _to_float(_cfg("deepseek_temperature", str(default_temperature)), default_temperature),
+        "max_tokens": _to_int(_cfg("deepseek_max_tokens", str(default_max_tokens)), default_max_tokens),
+    }
+
+
+def _vision_settings():
+    return {
+        "api_key": _cfg("vision_api_key", ""),
+        "base_url": _cfg("vision_base_url", ""),
+        "model": _cfg("vision_model", DEFAULT_VISION_MODEL),
+        "temperature": _to_float(_cfg("vision_temperature", DEFAULT_VISION_TEMPERATURE), 0.2),
+        "max_tokens": _to_int(_cfg("vision_max_tokens", DEFAULT_VISION_MAX_TOKENS), 2048),
+        "prompt": _cfg("vision_prompt", DEFAULT_VISION_PROMPT),
+    }
 
 
 # ═══════════════════════════════════════════════════════════
@@ -150,7 +205,10 @@ def api_generate_profile():
     extra = data.get("extra_prompt", "")
 
     try:
-        profile_md = generate_profile(notes, api_key, bio=bio, extra=extra)
+        llm = _text_llm_settings(default_temperature=0.5, default_max_tokens=4096)
+        profile_md = generate_profile(notes, api_key, base_url=llm["base_url"],
+                                      model=llm["model"], temperature=llm["temperature"],
+                                      max_tokens=llm["max_tokens"], bio=bio, extra=extra)
         db.set_config("profile_md", profile_md)
         return jsonify({"content": profile_md})
     except Exception as e:
@@ -182,7 +240,10 @@ def api_generate_suggestions():
     extra = data.get("extra_prompt", "")
 
     try:
-        result = generate_suggestions(notes, profile, api_key, bio=bio, extra=extra)
+        llm = _text_llm_settings(default_temperature=0.8, default_max_tokens=4096)
+        result = generate_suggestions(notes, profile, api_key, base_url=llm["base_url"],
+                                      model=llm["model"], temperature=llm["temperature"],
+                                      max_tokens=llm["max_tokens"], bio=bio, extra=extra)
         return jsonify({"content": result})
     except Exception as e:
         return jsonify({"error": f"生成失败: {str(e)}"}), 500
@@ -290,7 +351,10 @@ def api_deep_analyze():
     extra = data.get("extra_prompt", "")
 
     try:
-        result = deep_analyze(notes, api_key, bio=bio, extra=extra)
+        llm = _text_llm_settings(default_temperature=0.5, default_max_tokens=4096)
+        result = deep_analyze(notes, api_key, base_url=llm["base_url"],
+                              model=llm["model"], temperature=llm["temperature"],
+                              max_tokens=llm["max_tokens"], bio=bio, extra=extra)
         # Persist the analysis so it survives across sessions
         db.set_config("analysis_md", result)
         return jsonify({"content": result})
@@ -353,8 +417,11 @@ def api_create_content():
     extra = data.get("extra_prompt", "")
 
     try:
+        llm = _text_llm_settings(default_temperature=0.75, default_max_tokens=4096)
         result = generate_content(description, api_key,
-                                  profile=profile, bio=bio, extra=extra)
+                                  profile=profile, bio=bio, extra=extra,
+                                  base_url=llm["base_url"], model=llm["model"],
+                                  temperature=llm["temperature"], max_tokens=llm["max_tokens"])
         if "error" in result:
             return jsonify(result), 400
 
@@ -437,13 +504,66 @@ def api_chat():
         notes_context = "\n".join(lines)
 
     try:
+        llm = _text_llm_settings(default_temperature=0.8, default_max_tokens=2048)
         reply = chat(api_key, messages,
                      notes_context=notes_context,
                      profile_context=profile,
-                     bio=bio)
+                     bio=bio, base_url=llm["base_url"], model=llm["model"],
+                     temperature=llm["temperature"], max_tokens=llm["max_tokens"])
         return jsonify({"reply": reply})
     except Exception as e:
         return jsonify({"error": f"对话失败: {str(e)}"}), 500
+
+
+
+# ═══════════════════════════════════════════════════════════
+#  Vision / Image Description API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/vision/describe", methods=["POST"])
+def api_vision_describe():
+    settings = _vision_settings()
+    if not settings["api_key"]:
+        return jsonify({"error": "请先在设置中配置图片识别 API Key"}), 400
+    if not settings["base_url"]:
+        return jsonify({"error": "请先在设置中配置图片识别 Base URL"}), 400
+    if not settings["model"]:
+        return jsonify({"error": "请先在设置中配置图片识别模型名"}), 400
+
+    files = request.files.getlist("images")
+    if not files:
+        return jsonify({"error": "请先选择图片"}), 400
+    if len(files) > MAX_VISION_IMAGES:
+        return jsonify({"error": f"一次最多识别 {MAX_VISION_IMAGES} 张图片"}), 400
+
+    images = []
+    for file in files:
+        filename = file.filename or "image"
+        mime_type = file.mimetype or ""
+        if not mime_type.startswith("image/"):
+            return jsonify({"error": f"{filename} 不是支持的图片文件"}), 400
+        content = file.read()
+        if not content:
+            return jsonify({"error": f"{filename} 内容为空"}), 400
+        if len(content) > MAX_IMAGE_BYTES:
+            return jsonify({"error": f"{filename} 超过 10MB 限制"}), 400
+        images.append({"filename": filename, "mime_type": mime_type, "bytes": content})
+
+    prompt = (request.form.get("prompt") or settings["prompt"] or DEFAULT_VISION_PROMPT).strip()
+
+    try:
+        result = describe_images(
+            images=images,
+            api_key=settings["api_key"],
+            base_url=settings["base_url"],
+            model=settings["model"],
+            prompt=prompt,
+            temperature=settings["temperature"],
+            max_tokens=settings["max_tokens"],
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"识图失败: {str(e)}"}), 500
 
 
 # ═══════════════════════════════════════════════════════════
@@ -455,6 +575,16 @@ def api_get_settings():
     return jsonify(
         {
             "deepseek_api_key": db.get_config("deepseek_api_key", ""),
+            "deepseek_base_url": db.get_config("deepseek_base_url", DEFAULT_TEXT_BASE_URL),
+            "deepseek_model": db.get_config("deepseek_model", DEFAULT_TEXT_MODEL),
+            "deepseek_temperature": db.get_config("deepseek_temperature", DEFAULT_TEXT_TEMPERATURE),
+            "deepseek_max_tokens": db.get_config("deepseek_max_tokens", DEFAULT_TEXT_MAX_TOKENS),
+            "vision_api_key": db.get_config("vision_api_key", ""),
+            "vision_base_url": db.get_config("vision_base_url", ""),
+            "vision_model": db.get_config("vision_model", DEFAULT_VISION_MODEL),
+            "vision_temperature": db.get_config("vision_temperature", DEFAULT_VISION_TEMPERATURE),
+            "vision_max_tokens": db.get_config("vision_max_tokens", DEFAULT_VISION_MAX_TOKENS),
+            "vision_prompt": db.get_config("vision_prompt", DEFAULT_VISION_PROMPT),
             "blogger_bio": db.get_config("blogger_bio", ""),
         }
     )
@@ -463,10 +593,16 @@ def api_get_settings():
 @app.route("/api/settings", methods=["PUT"])
 def api_save_settings():
     data = request.get_json(force=True)
-    if "deepseek_api_key" in data:
-        db.set_config("deepseek_api_key", data["deepseek_api_key"])
-    if "blogger_bio" in data:
-        db.set_config("blogger_bio", data["blogger_bio"])
+    allowed_keys = [
+        "deepseek_api_key", "deepseek_base_url", "deepseek_model",
+        "deepseek_temperature", "deepseek_max_tokens",
+        "vision_api_key", "vision_base_url", "vision_model",
+        "vision_temperature", "vision_max_tokens", "vision_prompt",
+        "blogger_bio",
+    ]
+    for key in allowed_keys:
+        if key in data:
+            db.set_config(key, str(data[key]))
     return jsonify({"ok": True})
 
 
