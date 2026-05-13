@@ -5,6 +5,7 @@ import json
 import traceback
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
+import markdown
 
 import database as db
 from deepseek_client import generate_profile, generate_suggestions, deep_analyze, generate_content, chat
@@ -18,6 +19,14 @@ db.init_db()
 APP_HOST = "127.0.0.1"
 APP_PORT = 5001
 APP_URL = f"http://{APP_HOST}:{APP_PORT}"
+
+_md = markdown.Markdown(extensions=["tables", "fenced_code", "codehilite"])
+
+def _render_md(text: str) -> str:
+    """Render markdown text to HTML, with table support."""
+    if not text:
+        return ""
+    return _md.convert(text)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -322,8 +331,46 @@ def api_save_profile():
 
 
 # ═══════════════════════════════════════════════════════════
+#  Markdown rendering
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/markdown", methods=["POST"])
+def api_render_markdown():
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    return jsonify({"html": _render_md(text)})
+
+
+# ═══════════════════════════════════════════════════════════
 #  Suggestions API
 # ═══════════════════════════════════════════════════════════
+
+def _get_suggestion_history():
+    raw = db.get_config("suggestion_history", "[]")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+
+def _save_suggestion_history(history):
+    db.set_config("suggestion_history", json.dumps(history, ensure_ascii=False))
+
+
+@app.route("/api/suggestions/history", methods=["GET"])
+def api_suggestion_history():
+    return jsonify({"items": _get_suggestion_history()})
+
+
+@app.route("/api/suggestions/history/<int:index>", methods=["DELETE"])
+def api_suggestion_history_delete(index):
+    history = _get_suggestion_history()
+    if 0 <= index < len(history):
+        history.pop(index)
+        _save_suggestion_history(history)
+        return jsonify({"ok": True})
+    return jsonify({"error": "记录不存在"}), 404
+
 
 @app.route("/api/suggestions", methods=["POST"])
 def api_generate_suggestions():
@@ -343,7 +390,19 @@ def api_generate_suggestions():
         result = generate_suggestions(notes, profile, api_key, base_url=llm["base_url"],
                                       model=llm["model"], temperature=llm["temperature"],
                                       max_tokens=llm["max_tokens"], bio=bio, extra=extra)
-        return jsonify({"content": result})
+
+        # Save to history
+        history = _get_suggestion_history()
+        import datetime
+        history.insert(0, {
+            "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "extra_prompt": extra[:200],
+            "content": result,
+        })
+        _save_suggestion_history(history[:50])
+
+        return jsonify({"content": result, "html": _render_md(result)})
     except Exception as e:
         return jsonify({"error": f"生成失败: {str(e)}"}), 500
 
@@ -425,6 +484,7 @@ def api_analytics_stats():
             "topic_stats": topic_list,
             # Also return the persisted deep analysis
             "analysis_md": db.get_config("analysis_md", ""),
+            "analysis_html": _render_md(db.get_config("analysis_md", "")),
         }
     )
 
@@ -432,7 +492,8 @@ def api_analytics_stats():
 @app.route("/api/analytics/deep", methods=["GET"])
 def api_get_deep_analysis():
     """Return existing deep analysis (for auto-load on tab open)."""
-    return jsonify({"content": db.get_config("analysis_md", "")})
+    content = db.get_config("analysis_md", "")
+    return jsonify({"content": content, "html": _render_md(content)})
 
 
 @app.route("/api/analytics/deep", methods=["POST"])
@@ -456,7 +517,7 @@ def api_deep_analyze():
                               max_tokens=llm["max_tokens"], bio=bio, extra=extra)
         # Persist the analysis so it survives across sessions
         db.set_config("analysis_md", result)
-        return jsonify({"content": result})
+        return jsonify({"content": result, "html": _render_md(result)})
     except Exception as e:
         return jsonify({"error": f"分析失败: {str(e)}"}), 500
 
@@ -465,8 +526,9 @@ def api_deep_analyze():
 def api_save_deep_analysis():
     """Manually edit the persisted deep analysis."""
     data = request.get_json(force=True)
-    db.set_config("analysis_md", data.get("content", ""))
-    return jsonify({"ok": True})
+    content = data.get("content", "")
+    db.set_config("analysis_md", content)
+    return jsonify({"ok": True, "html": _render_md(content)})
 
 
 # ═══════════════════════════════════════════════════════════
@@ -752,9 +814,10 @@ def api_clear_module():
     module_keys = {
         "profile": ["profile_md"],
         "analysis": ["analysis_md"],
+        "suggestions": ["suggestion_history"],
         "content_history": ["content_history"],
         "chat": [],  # chat is frontend-only, no backend storage
-        "all": ["profile_md", "analysis_md", "content_history"],
+        "all": ["profile_md", "analysis_md", "suggestion_history", "content_history"],
     }
 
     if module not in module_keys:

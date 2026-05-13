@@ -133,6 +133,12 @@
       <input id="suggest-extra-prompt" placeholder="如：侧重夏日穿搭、母婴好物…">
     </div>
     <div id="suggestions-display" class="markdown-body"></div>
+
+    <!-- Suggestion History -->
+    <div id="suggestion-history-section" style="margin-top:24px">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">📋 历史记录</h3>
+      <div id="suggestion-history-list" class="history-list"></div>
+    </div>
   </section>
 
   <!-- ═══════════ 数据分析 ═══════════ -->
@@ -358,6 +364,7 @@
       <div class="clear-buttons">
         <button class="btn-danger btn-clear" data-module="profile">清除博主画像</button>
         <button class="btn-danger btn-clear" data-module="analysis">清除数据分析</button>
+        <button class="btn-danger btn-clear" data-module="suggestions">清除选题建议历史</button>
         <button class="btn-danger btn-clear" data-module="content_history">清除内容创作历史</button>
         <button class="btn-danger btn-clear" data-module="all" style="background:#e03131;color:#fff;border-color:#e03131">⚠ 清除以上全部</button>
       </div>

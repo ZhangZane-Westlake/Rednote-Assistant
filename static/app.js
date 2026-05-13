@@ -12,6 +12,7 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === 'analytics') loadAnalytics();
     if (btn.dataset.tab === 'profile') loadProfile();
+    if (btn.dataset.tab === 'suggest') loadSuggestionHistory();
     if (btn.dataset.tab === 'create') loadContentHistory();
     if (btn.dataset.tab === 'settings') loadSettings();
   });
@@ -342,7 +343,8 @@ document.getElementById('btn-gen-suggest').addEventListener('click', async () =>
     });
     const data = await resp.json();
     if (data.error) { toast(data.error); return; }
-    disp.innerHTML = md2html(data.content);
+    disp.innerHTML = data.html || md2html(data.content);
+    loadSuggestionHistory(); // refresh history after generation
   } catch (e) {
     toast('请求失败: ' + e.message);
   } finally {
@@ -350,6 +352,57 @@ document.getElementById('btn-gen-suggest').addEventListener('click', async () =>
     btn.textContent = '✨ 生成选题建议';
   }
 });
+
+// Suggestion history
+async function loadSuggestionHistory() {
+  const resp = await fetch('/api/suggestions/history');
+  const data = await resp.json();
+  const list = document.getElementById('suggestion-history-list');
+
+  if (!data.items || !data.items.length) {
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-light);padding:20px">暂无历史记录</div>';
+    return;
+  }
+
+  list.innerHTML = data.items.map((item, idx) => `
+    <div class="history-item">
+      <div class="history-info" onclick="viewSuggestionHistory(${idx})" style="cursor:pointer">
+        <div class="history-desc">${esc(item.extra_prompt || '(无额外提示)')}</div>
+        <div class="history-time">${item.timestamp}</div>
+      </div>
+      <button class="btn-ghost" style="font-size:12px;padding:4px 12px" onclick="event.stopPropagation();deleteSuggestionHistory(${idx})">🗑</button>
+    </div>
+  `).join('');
+}
+
+async function viewSuggestionHistory(idx) {
+  const resp = await fetch('/api/suggestions/history');
+  const data = await resp.json();
+  const item = data.items[idx];
+  if (!item) return;
+
+  // Render markdown server-side for proper table support
+  const renderResp = await fetch('/api/markdown', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ text: item.content }),
+  });
+  const renderData = await renderResp.json();
+  document.getElementById('suggestions-display').innerHTML = renderData.html;
+
+  // Restore the extra prompt
+  document.getElementById('suggest-extra-prompt').value = item.extra_prompt || '';
+
+  // Scroll the display into view
+  document.getElementById('suggestions-display').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deleteSuggestionHistory(idx) {
+  if (!confirm('确定删除这条记录吗？')) return;
+  await fetch(`/api/suggestions/history/${idx}`, { method: 'DELETE' });
+  loadSuggestionHistory();
+  toast('已删除');
+}
 
 
 // ═══════════════════════════════════════════════════════════
@@ -369,7 +422,10 @@ async function loadAnalytics() {
 
   // Show persisted deep analysis (if any)
   const analysisDisplay = document.getElementById('deep-analysis-display');
-  if (stats.analysis_md) {
+  if (stats.analysis_html) {
+    analysisDisplay.innerHTML = stats.analysis_html;
+    analysisDisplay.style.display = 'block';
+  } else if (stats.analysis_md) {
     analysisDisplay.innerHTML = md2html(stats.analysis_md);
     analysisDisplay.style.display = 'block';
   } else {
@@ -464,7 +520,7 @@ document.getElementById('btn-deep-analyze').addEventListener('click', async () =
     const data = await resp.json();
     if (data.error) { toast(data.error); return; }
     const display = document.getElementById('deep-analysis-display');
-    display.innerHTML = md2html(data.content);
+    display.innerHTML = data.html || md2html(data.content);
     display.style.display = 'block';
     display.scrollIntoView({ behavior: 'smooth' });
     toast('分析已生成并保存');
@@ -493,13 +549,14 @@ document.getElementById('btn-cancel-analysis').addEventListener('click', () => {
 
 document.getElementById('btn-save-analysis').addEventListener('click', async () => {
   const content = document.getElementById('analysis-textarea').value;
-  await fetch('/api/analytics/deep', {
+  const resp = await fetch('/api/analytics/deep', {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ content }),
   });
+  const data = await resp.json();
   const display = document.getElementById('deep-analysis-display');
-  display.innerHTML = md2html(content);
+  display.innerHTML = data.html || md2html(content);
   display.style.display = 'block';
   document.getElementById('deep-analysis-editor').style.display = 'none';
   toast('分析已保存');
@@ -855,7 +912,7 @@ document.querySelectorAll('.btn-clear').forEach(btn => {
     const module = btn.dataset.module;
     const labels = {
       profile: '博主画像', analysis: '数据分析',
-      content_history: '内容创作历史', all: '以上全部数据'
+      suggestions: '选题建议历史', content_history: '内容创作历史', all: '以上全部数据'
     };
     const label = labels[module] || module;
     if (!confirm(`确定清除「${label}」吗？此操作不可撤销。`)) return;
@@ -870,6 +927,7 @@ document.querySelectorAll('.btn-clear').forEach(btn => {
       toast(`「${label}」已清除`);
       if (module === 'profile' || module === 'all') loadProfile();
       if (module === 'analysis' || module === 'all') loadAnalytics();
+      if (module === 'suggestions' || module === 'all') loadSuggestionHistory();
       if (module === 'content_history' || module === 'all') loadContentHistory();
     } else {
       toast(data.error || '清除失败');
@@ -926,6 +984,7 @@ async function switchAccount(accountId) {
       const tab = activeTab.dataset.tab;
       if (tab === 'analytics') loadAnalytics();
       if (tab === 'profile') loadProfile();
+      if (tab === 'suggest') loadSuggestionHistory();
       if (tab === 'create') loadContentHistory();
       if (tab === 'settings') loadSettings();
     }
@@ -965,11 +1024,11 @@ async function deleteAccount(accountId, name) {
     const tab = activeTab.dataset.tab;
     if (tab === 'analytics') loadAnalytics();
     if (tab === 'profile') loadProfile();
+    if (tab === 'suggest') loadSuggestionHistory();
     if (tab === 'create') loadContentHistory();
     if (tab === 'settings') loadSettings();
   }
 }
-
 
 // ═══════════════════════════════════════════════════════════
 //  Init
