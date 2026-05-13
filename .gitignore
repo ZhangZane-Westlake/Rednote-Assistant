@@ -1,0 +1,15 @@
+# macOS / Python cache files
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local runtime data
+notes.db
+
+# Build artifacts
+dist/
+build/
+*.dmg
+*.app

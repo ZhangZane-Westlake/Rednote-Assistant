@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📕 小红书笔记助手</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>小红书笔记助手</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div id="account-switcher" class="account-switcher">
+      <select id="account-select" onchange="switchAccount(this.value)">
+        <option value="">加载中…</option>
+      </select>
+    </div>
+    <div id="status-bar"></div>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-tab="notes">📝 笔记管理</button>
+  <button class="tab" data-tab="profile">👤 博主画像</button>
+  <button class="tab" data-tab="suggest">💡 选题建议</button>
+  <button class="tab" data-tab="analytics">📊 数据分析</button>
+  <button class="tab" data-tab="create">🎬 内容创作</button>
+  <button class="tab" data-tab="chat">💬 AI 对话</button>
+  <button class="tab" data-tab="settings">⚙️ 设置</button>
+</nav>
+
+<main>
+
+  <!-- ═══════════ 笔记管理 ═══════════ -->
+  <section id="tab-notes" class="tab-content active">
+    <div class="toolbar">
+      <button id="btn-add-note" class="btn-primary">＋ 添加笔记</button>
+      <span class="note-count" id="note-count">共 0 篇</span>
+    </div>
+
+    <div id="note-form" class="card" style="display:none">
+      <h3 id="form-title">添加笔记</h3>
+      <input type="hidden" id="note-id">
+      <div class="form-row">
+        <label>标题 <span class="required">*</span></label>
+        <input id="f-title" placeholder="笔记标题">
+      </div>
+      <div class="form-row">
+        <label>话题标签</label>
+        <input id="f-topics" placeholder="如：#探店 #咖啡 #杭州">
+      </div>
+      <div class="form-row">
+        <label>内容类型</label>
+        <select id="f-type">
+          <option value="photo">图文</option>
+          <option value="video">视频</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>发布日期</label>
+        <input type="date" id="f-date">
+      </div>
+      <div class="form-row">
+        <label>正文内容</label>
+        <textarea id="f-text" rows="6" placeholder="粘贴笔记文案…"></textarea>
+      </div>
+      <div class="form-row">
+        <label>图片描述</label>
+        <textarea id="f-images" rows="3" placeholder="图1: 拿铁俯拍
+图2: 店内环境…"></textarea>
+      </div>
+      <fieldset>
+        <legend>📈 数据</legend>
+        <div class="stats-grid">
+          <label>阅读 <input type="number" id="f-views" value="0" min="0"></label>
+          <label>点赞 <input type="number" id="f-likes" value="0" min="0"></label>
+          <label>收藏 <input type="number" id="f-saves" value="0" min="0"></label>
+          <label>评论 <input type="number" id="f-comments" value="0" min="0"></label>
+          <label>分享 <input type="number" id="f-shares" value="0" min="0"></label>
+        </div>
+      </fieldset>
+      <div class="form-row">
+        <label>备注</label>
+        <input id="f-notes" placeholder="额外说明…">
+      </div>
+      <div class="form-actions">
+        <button id="btn-save-note" class="btn-primary">💾 保存</button>
+        <button id="btn-cancel-note" class="btn-ghost">取消</button>
+      </div>
+    </div>
+
+    <div id="notes-list" class="notes-list"></div>
+  </section>
+
+  <!-- ═══════════ 博主画像 ═══════════ -->
+  <section id="tab-profile" class="tab-content">
+    <div class="toolbar">
+      <button id="btn-gen-profile" class="btn-primary">🔄 重新生成</button>
+      <button id="btn-edit-profile" class="btn-ghost">✏️ 手动编辑</button>
+    </div>
+    <div class="card extra-prompt-box">
+      <label class="extra-label">💬 额外提示（可选，附加到生成请求）</label>
+      <input id="profile-extra-prompt" placeholder="如：重点关注封面风格…">
+    </div>
+    <div id="profile-display" class="card markdown-body">暂无画像，请先添加笔记后点击「重新生成」。</div>
+    <div id="profile-editor" class="card" style="display:none">
+      <textarea id="profile-textarea" rows="25"></textarea>
+      <div class="form-actions">
+        <button id="btn-save-profile" class="btn-primary">💾 保存</button>
+        <button id="btn-cancel-profile" class="btn-ghost">取消</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 选题建议 ═══════════ -->
+  <section id="tab-suggest" class="tab-content">
+    <div class="toolbar">
+      <button id="btn-gen-suggest" class="btn-primary">✨ 生成选题建议</button>
+      <span class="hint">基于画像和过往笔记，每次生成 5 个选题</span>
+    </div>
+    <div class="card extra-prompt-box">
+      <label class="extra-label">💬 额外提示（可选，如指定主题方向）</label>
+      <input id="suggest-extra-prompt" placeholder="如：侧重夏日穿搭、母婴好物…">
+    </div>
+    <div id="suggestions-display" class="markdown-body"></div>
+  </section>
+
+  <!-- ═══════════ 数据分析 ═══════════ -->
+  <section id="tab-analytics" class="tab-content">
+    <div class="toolbar">
+      <button id="btn-deep-analyze" class="btn-primary">🤖 LLM 深度分析</button>
+      <button id="btn-edit-analysis" class="btn-ghost">✏️ 手动编辑</button>
+    </div>
+    <div class="card extra-prompt-box">
+      <label class="extra-label">💬 额外提示（可选）</label>
+      <input id="analyze-extra-prompt" placeholder="如：重点分析收藏率偏低的原因…">
+    </div>
+
+    <div id="stats-overview" class="stats-cards"></div>
+
+    <div class="chart-row">
+      <div class="chart-box">
+        <h3>各笔记互动数据</h3>
+        <canvas id="chart-interactions"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="chart-box half">
+        <h3>图文 vs 视频 平均点赞</h3>
+        <canvas id="chart-type"></canvas>
+      </div>
+      <div class="chart-box half">
+        <h3>话题发文数量</h3>
+        <canvas id="chart-topics"></canvas>
+      </div>
+    </div>
+
+    <div id="deep-analysis-display" class="card markdown-body"></div>
+    <div id="deep-analysis-editor" class="card" style="display:none">
+      <textarea id="analysis-textarea" rows="25"></textarea>
+      <div class="form-actions">
+        <button id="btn-save-analysis" class="btn-primary">💾 保存</button>
+        <button id="btn-cancel-analysis" class="btn-ghost">取消</button>
+      </div>
+    </div>
+
+    <div id="deep-analysis-result" class="card markdown-body" style="display:none"></div>
+  </section>
+
+  <!-- ═══════════ 内容创作 ═══════════ -->
+  <section id="tab-create" class="tab-content">
+    <div class="toolbar">
+      <h2 style="font-size:16px;font-weight:600;margin:0">根据素材生成风格建议 + 笔记正文</h2>
+    </div>
+
+    <div class="card">
+      <div class="form-row">
+        <label>📷 描述你的照片/视频内容 <span class="required">*</span></label>
+        <textarea id="content-description" rows="6"
+          placeholder="描述你拍的照片或视频内容，例如：
+- 图1: 咖啡拿铁俯拍，木桌+阳光光斑
+- 图2: 拉花特写，奶泡纹理
+- 图3: 店内环境，暖色调灯光
+- 整体氛围：周末探店、治愈系…"></textarea>
+      </div>
+      <div class="form-row">
+        <label>💬 额外要求（可选）</label>
+        <input id="content-extra-prompt" placeholder="如：偏可爱风格、需要SEO关键词…">
+      </div>
+      <div class="form-actions">
+        <button id="btn-gen-content" class="btn-primary">✨ 生成内容</button>
+        <button id="btn-copy-body" class="btn-ghost" style="display:none">📋 复制正文</button>
+      </div>
+    </div>
+
+    <div id="content-result" class="content-result">
+      <div class="content-panel" id="content-style-panel" style="display:none">
+        <h3>🎨 风格建议</h3>
+        <div class="markdown-body" id="content-style-display"></div>
+      </div>
+      <div class="content-panel" id="content-body-panel" style="display:none">
+        <h3>📝 笔记正文</h3>
+        <div class="markdown-body" id="content-body-display"></div>
+      </div>
+    </div>
+
+    <!-- Content Creation History -->
+    <div id="content-history-section" style="margin-top:24px">
+      <h3 style="font-size:15px;font-weight:600;margin-bottom:12px">📋 历史记录</h3>
+      <div id="content-history-list" class="history-list"></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ AI 对话 ═══════════ -->
+  <section id="tab-chat" class="tab-content">
+    <div class="chat-container">
+      <div class="chat-header">
+        <span>💬 AI 运营顾问</span>
+        <button id="btn-clear-chat" class="btn-ghost" style="font-size:12px;padding:4px 12px">清空对话</button>
+      </div>
+      <div id="chat-messages" class="chat-messages">
+        <div class="chat-msg assistant">
+          <div class="chat-bubble">
+            你好！我是你的小红书运营 AI 顾问。我可以帮你解答内容创作、运营策略、数据分析等方面的问题。尽管问吧 📕
+          </div>
+        </div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" rows="1" placeholder="输入你的问题…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}"></textarea>
+        <button id="btn-send-chat" class="btn-primary">发送</button>
+        <button id="btn-cancel-chat" class="btn-ghost btn-cancel" style="display:none">✕ 取消</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 设置 ═══════════ -->
+  <section id="tab-settings" class="tab-content">
+    <div class="card">
+      <h3>API 配置</h3>
+      <div class="form-row">
+        <label>DeepSeek API Key</label>
+        <input type="password" id="s-apikey" placeholder="sk-...">
+      </div>
+      <div class="form-row">
+        <label>Base URL</label>
+        <input id="s-baseurl" value="https://api.deepseek.com/v1" readonly disabled>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>👤 博主主页简介</h3>
+      <div class="form-row">
+        <label>自我介绍 / 主页描述</label>
+        <textarea id="s-bio" rows="4" placeholder="描述你的账号定位、内容方向、粉丝画像等。这部分会在画像生成、选题建议和数据分析时自动附加。"></textarea>
+      </div>
+    </div>
+
+    <button id="btn-save-settings" class="btn-primary">💾 保存设置</button>
+
+    <div class="card" style="margin-top:24px">
+      <h3>👥 账号管理</h3>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">不同账号的数据（笔记、画像、分析、创作历史）完全隔离</p>
+      <div class="account-manage">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="new-account-name" placeholder="新账号名称" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px">
+          <button id="btn-add-account" class="btn-primary" style="white-space:nowrap">＋ 添加</button>
+        </div>
+        <div id="account-list" class="account-list"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:24px">
+      <h3>🗑 清除数据</h3>
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">清除各模块本地保存的数据（笔记本身不受影响）</p>
+      <div class="clear-buttons">
+        <button class="btn-danger btn-clear" data-module="profile">清除博主画像</button>
+        <button class="btn-danger btn-clear" data-module="analysis">清除数据分析</button>
+        <button class="btn-danger btn-clear" data-module="content_history">清除内容创作历史</button>
+        <button class="btn-danger btn-clear" data-module="all" style="background:#e03131;color:#fff;border-color:#e03131">⚠ 清除以上全部</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>小红书笔记助手 · 数据全部存储在本地 · <span id="db-path"></span></footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

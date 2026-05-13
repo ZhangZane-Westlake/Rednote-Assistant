@@ -1,0 +1,503 @@
+"""Flask backend for XHS Assistant."""
+
+import json
+import traceback
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+
+import database as db
+from deepseek_client import generate_profile, generate_suggestions, deep_analyze, generate_content, chat
+
+app = Flask(__name__)
+CORS(app)
+
+db.init_db()
+
+
+# ═══════════════════════════════════════════════════════════
+#  Static / Frontend
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+# ═══════════════════════════════════════════════════════════
+#  Account API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/accounts", methods=["GET"])
+def api_list_accounts():
+    accounts = db.list_accounts()
+    current = db.get_current_account_id()
+    return jsonify({
+        "accounts": accounts,
+        "current_id": current,
+    })
+
+
+@app.route("/api/accounts", methods=["POST"])
+def api_add_account():
+    data = request.get_json(force=True)
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "账号名称不能为空"}), 400
+    try:
+        acct = db.add_account(name)
+        return jsonify(acct), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/accounts/<account_id>", methods=["DELETE"])
+def api_delete_account(account_id):
+    accounts = db.list_accounts()
+    if len(accounts) <= 1:
+        return jsonify({"error": "至少保留一个账号"}), 400
+    try:
+        db.delete_account(account_id)
+        return jsonify({"ok": True, "current_id": db.get_current_account_id()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/accounts/<account_id>", methods=["PUT"])
+def api_rename_account(account_id):
+    data = request.get_json(force=True)
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "名称不能为空"}), 400
+    try:
+        db.rename_account(account_id, name)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/accounts/switch", methods=["POST"])
+def api_switch_account():
+    data = request.get_json(force=True)
+    account_id = data.get("account_id", "")
+    if not account_id:
+        return jsonify({"error": "请指定账号"}), 400
+    try:
+        db.set_current_account(account_id)
+        return jsonify({"ok": True, "current_id": account_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════
+#  Notes API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/notes", methods=["GET"])
+def api_list_notes():
+    return jsonify(db.list_notes())
+
+
+@app.route("/api/notes", methods=["POST"])
+def api_create_note():
+    data = request.get_json(force=True)
+    if not data.get("title"):
+        return jsonify({"error": "标题不能为空"}), 400
+    note = db.create_note(data)
+    return jsonify(note), 201
+
+
+@app.route("/api/notes/<int:note_id>", methods=["PUT"])
+def api_update_note(note_id):
+    note = db.get_note(note_id)
+    if not note:
+        return jsonify({"error": "笔记不存在"}), 404
+    data = request.get_json(force=True)
+    note = db.update_note(note_id, data)
+    return jsonify(note)
+
+
+@app.route("/api/notes/<int:note_id>", methods=["DELETE"])
+def api_delete_note(note_id):
+    note = db.get_note(note_id)
+    if not note:
+        return jsonify({"error": "笔记不存在"}), 404
+    db.delete_note(note_id)
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════
+#  Profile API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/profile", methods=["GET"])
+def api_get_profile():
+    p = db.get_config("profile_md", "")
+    return jsonify({"content": p})
+
+
+@app.route("/api/profile/generate", methods=["POST"])
+def api_generate_profile():
+    api_key = db.get_config("deepseek_api_key", "")
+    if not api_key:
+        return jsonify({"error": "请先在设置中配置 DeepSeek API Key"}), 400
+
+    notes = db.list_notes()
+    if not notes:
+        return jsonify({"error": "暂无笔记数据"}), 400
+
+    data = request.get_json(silent=True) or {}
+    bio = db.get_config("blogger_bio", "")
+    extra = data.get("extra_prompt", "")
+
+    try:
+        profile_md = generate_profile(notes, api_key, bio=bio, extra=extra)
+        db.set_config("profile_md", profile_md)
+        return jsonify({"content": profile_md})
+    except Exception as e:
+        return jsonify({"error": f"生成失败: {str(e)}"}), 500
+
+
+@app.route("/api/profile", methods=["PUT"])
+def api_save_profile():
+    data = request.get_json(force=True)
+    db.set_config("profile_md", data.get("content", ""))
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════
+#  Suggestions API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/suggestions", methods=["POST"])
+def api_generate_suggestions():
+    api_key = db.get_config("deepseek_api_key", "")
+    if not api_key:
+        return jsonify({"error": "请先在设置中配置 DeepSeek API Key"}), 400
+
+    notes = db.list_notes()
+    profile = db.get_config("profile_md", "")
+
+    data = request.get_json(silent=True) or {}
+    bio = db.get_config("blogger_bio", "")
+    extra = data.get("extra_prompt", "")
+
+    try:
+        result = generate_suggestions(notes, profile, api_key, bio=bio, extra=extra)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"生成失败: {str(e)}"}), 500
+
+
+# ═══════════════════════════════════════════════════════════
+#  Analytics API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/analytics/stats", methods=["GET"])
+def api_analytics_stats():
+    notes = db.list_notes()
+    if not notes:
+        return jsonify({"total_notes": 0})
+
+    total = len(notes)
+    total_views = sum(n["views"] for n in notes)
+    total_likes = sum(n["likes"] for n in notes)
+    total_saves = sum(n["saves"] for n in notes)
+    total_comments = sum(n["comments"] for n in notes)
+    total_shares = sum(n["shares"] for n in notes)
+
+    # Per note data for charts
+    chart_data = [
+        {
+            "title": n["title"],
+            "views": n["views"],
+            "likes": n["likes"],
+            "saves": n["saves"],
+            "comments": n["comments"],
+            "shares": n["shares"],
+            "content_type": n["content_type"],
+            "topics": n["topics"],
+            "publish_date": n["publish_date"],
+        }
+        for n in notes
+    ]
+
+    # Content type comparison
+    photo_notes = [n for n in notes if n["content_type"] == "photo"]
+    video_notes = [n for n in notes if n["content_type"] == "video"]
+    photo_avg_likes = (
+        sum(n["likes"] for n in photo_notes) / len(photo_notes) if photo_notes else 0
+    )
+    video_avg_likes = (
+        sum(n["likes"] for n in video_notes) / len(video_notes) if video_notes else 0
+    )
+
+    # Topic stats — split by , ， #
+    topic_stats = {}
+    for n in notes:
+        for t in n["topics"].replace("，", ",").replace("#", ",").replace(" ", "").split(","):
+            t = t.strip()
+            if not t:
+                continue
+            if t not in topic_stats:
+                topic_stats[t] = {"count": 0, "total_likes": 0}
+            topic_stats[t]["count"] += 1
+            topic_stats[t]["total_likes"] += n["likes"]
+
+    topic_list = sorted(
+        [{"topic": k, **v, "avg_likes": round(v["total_likes"] / v["count"], 1)} for k, v in topic_stats.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )
+
+    return jsonify(
+        {
+            "total_notes": total,
+            "total_views": total_views,
+            "total_likes": total_likes,
+            "total_saves": total_saves,
+            "total_comments": total_comments,
+            "total_shares": total_shares,
+            "photo_count": len(photo_notes),
+            "video_count": len(video_notes),
+            "photo_avg_likes": round(photo_avg_likes, 1),
+            "video_avg_likes": round(video_avg_likes, 1),
+            "chart_data": chart_data,
+            "topic_stats": topic_list,
+            # Also return the persisted deep analysis
+            "analysis_md": db.get_config("analysis_md", ""),
+        }
+    )
+
+
+@app.route("/api/analytics/deep", methods=["GET"])
+def api_get_deep_analysis():
+    """Return existing deep analysis (for auto-load on tab open)."""
+    return jsonify({"content": db.get_config("analysis_md", "")})
+
+
+@app.route("/api/analytics/deep", methods=["POST"])
+def api_deep_analyze():
+    api_key = db.get_config("deepseek_api_key", "")
+    if not api_key:
+        return jsonify({"error": "请先在设置中配置 DeepSeek API Key"}), 400
+
+    notes = db.list_notes()
+    if not notes:
+        return jsonify({"error": "暂无笔记数据"}), 400
+
+    data = request.get_json(silent=True) or {}
+    bio = db.get_config("blogger_bio", "")
+    extra = data.get("extra_prompt", "")
+
+    try:
+        result = deep_analyze(notes, api_key, bio=bio, extra=extra)
+        # Persist the analysis so it survives across sessions
+        db.set_config("analysis_md", result)
+        return jsonify({"content": result})
+    except Exception as e:
+        return jsonify({"error": f"分析失败: {str(e)}"}), 500
+
+
+@app.route("/api/analytics/deep", methods=["PUT"])
+def api_save_deep_analysis():
+    """Manually edit the persisted deep analysis."""
+    data = request.get_json(force=True)
+    db.set_config("analysis_md", data.get("content", ""))
+    return jsonify({"ok": True})
+
+
+# ═══════════════════════════════════════════════════════════
+#  Content Creation API
+# ═══════════════════════════════════════════════════════════
+
+def _get_content_history():
+    raw = db.get_config("content_history", "[]")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+
+def _save_content_history(history):
+    db.set_config("content_history", json.dumps(history, ensure_ascii=False))
+
+
+@app.route("/api/content/history", methods=["GET"])
+def api_content_history():
+    return jsonify({"items": _get_content_history()})
+
+
+@app.route("/api/content/history/<int:index>", methods=["DELETE"])
+def api_content_history_delete(index):
+    history = _get_content_history()
+    if 0 <= index < len(history):
+        history.pop(index)
+        _save_content_history(history)
+        return jsonify({"ok": True})
+    return jsonify({"error": "记录不存在"}), 404
+
+
+@app.route("/api/content/create", methods=["POST"])
+def api_create_content():
+    api_key = db.get_config("deepseek_api_key", "")
+    if not api_key:
+        return jsonify({"error": "请先在设置中配置 DeepSeek API Key"}), 400
+
+    data = request.get_json(force=True)
+    description = data.get("description", "")
+    if not description.strip():
+        return jsonify({"error": "请描述你的照片/视频内容"}), 400
+
+    profile = db.get_config("profile_md", "")
+    bio = db.get_config("blogger_bio", "")
+    extra = data.get("extra_prompt", "")
+
+    try:
+        result = generate_content(description, api_key,
+                                  profile=profile, bio=bio, extra=extra)
+        if "error" in result:
+            return jsonify(result), 400
+
+        # Save to history
+        history = _get_content_history()
+        import datetime
+        history.insert(0, {
+            "id": datetime.datetime.now().strftime("%Y%m%d%H%M%S"),
+            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "description": description[:200],
+            "style_advice": result.get("style_advice", ""),
+            "body_text": result.get("body_text", ""),
+        })
+        # Keep at most 50 entries
+        _save_content_history(history[:50])
+
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": f"生成失败: {str(e)}"}), 500
+
+
+# ═══════════════════════════════════════════════════════════
+#  Chat API
+# ═══════════════════════════════════════════════════════════
+
+def _get_chat_history():
+    raw = db.get_config("chat_history", "[]")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+
+def _save_chat_history(history):
+    # Keep at most 200 messages
+    db.set_config("chat_history", json.dumps(history[-200:], ensure_ascii=False))
+
+
+@app.route("/api/chat/history", methods=["GET"])
+def api_chat_history():
+    return jsonify({"messages": _get_chat_history()})
+
+
+@app.route("/api/chat/history", methods=["POST"])
+def api_save_chat_history():
+    data = request.get_json(force=True)
+    messages = data.get("messages", [])
+    _save_chat_history(messages)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/chat/history", methods=["DELETE"])
+def api_clear_chat_history():
+    _save_chat_history([])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    api_key = db.get_config("deepseek_api_key", "")
+    if not api_key:
+        return jsonify({"error": "请先在设置中配置 DeepSeek API Key"}), 400
+
+    data = request.get_json(force=True)
+    messages = data.get("messages", [])
+    if not messages:
+        return jsonify({"error": "消息不能为空"}), 400
+
+    # Build context from notes & profile
+    notes = db.list_notes()
+    profile = db.get_config("profile_md", "")
+    bio = db.get_config("blogger_bio", "")
+
+    notes_context = ""
+    if notes:
+        recent = notes[:5]
+        lines = []
+        for n in recent:
+            lines.append(f"- [{n['content_type']}] {n['title']} | 赞{n['likes']} 藏{n['saves']}")
+        notes_context = "\n".join(lines)
+
+    try:
+        reply = chat(api_key, messages,
+                     notes_context=notes_context,
+                     profile_context=profile,
+                     bio=bio)
+        return jsonify({"reply": reply})
+    except Exception as e:
+        return jsonify({"error": f"对话失败: {str(e)}"}), 500
+
+
+# ═══════════════════════════════════════════════════════════
+#  Settings API
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    return jsonify(
+        {
+            "deepseek_api_key": db.get_config("deepseek_api_key", ""),
+            "blogger_bio": db.get_config("blogger_bio", ""),
+        }
+    )
+
+
+@app.route("/api/settings", methods=["PUT"])
+def api_save_settings():
+    data = request.get_json(force=True)
+    if "deepseek_api_key" in data:
+        db.set_config("deepseek_api_key", data["deepseek_api_key"])
+    if "blogger_bio" in data:
+        db.set_config("blogger_bio", data["blogger_bio"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/settings/clear", methods=["POST"])
+def api_clear_module():
+    """Clear data for a specific module."""
+    data = request.get_json(force=True)
+    module = data.get("module", "")
+
+    module_keys = {
+        "profile": ["profile_md"],
+        "analysis": ["analysis_md"],
+        "content_history": ["content_history"],
+        "chat": [],  # chat is frontend-only, no backend storage
+        "all": ["profile_md", "analysis_md", "content_history"],
+    }
+
+    if module not in module_keys:
+        return jsonify({"error": f"未知模块: {module}"}), 400
+
+    for key in module_keys[module]:
+        db.set_config(key, "")
+
+    return jsonify({"ok": True, "module": module})
+
+
+# ═══════════════════════════════════════════════════════════
+#  Main
+# ═══════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    print("📕 小红书笔记助手启动中...")
+    print("   打开浏览器访问 http://localhost:5001")
+    app.run(debug=True, host="127.0.0.1", port=5001)
