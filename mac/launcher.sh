@@ -30,10 +30,9 @@ if [ -z "$PYTHON" ]; then
     exit 1
 fi
 
-# ── 首次安装依赖 ─────────────────────────────
-if [ ! -f .deps_installed ]; then
-    "$PYTHON" -m pip install --quiet flask flask-cors openai pywebview 2>/dev/null
-    touch .deps_installed
+# ── 依赖检查与安装 ───────────────────────────
+if ! "$PYTHON" -c "import flask, flask_cors, openai, webview, markdown" 2>/dev/null; then
+    "$PYTHON" -m pip install --quiet -r requirements.txt 2>/dev/null
 fi
 
 # ── 启动（不用 exec，保留 shell 作为父进程）──
