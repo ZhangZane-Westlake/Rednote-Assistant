@@ -132,6 +132,12 @@ chmod +x build.sh
 
 首次打开未签名应用时，可能需要右键点击应用并选择"打开"。打包脚本会在 `.app` 首次启动时自动安装 `requirements.txt` 中的完整依赖；如果你是手动运行源码版，仍然需要先执行 `pip install -r requirements.txt`。
 
+如果 `.app` 弹出后关闭或显示空白页，请查看启动日志：
+
+```text
+~/Library/Logs/XHSAssistant/launcher.log
+```
+
 如需生成图标，请先安装 Pillow：
 
 ```bash
