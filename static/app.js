@@ -4,12 +4,41 @@
 
 // ── Tabs ─────────────────────────────────────────────────
 
+const TAB_LABELS = {
+  notes: '笔记管理',
+  profile: '博主画像',
+  suggest: '选题建议',
+  analytics: '数据分析',
+  create: '内容创作',
+  chat: 'AI 对话',
+  settings: '设置',
+};
+
+function setStatusBar(message) {
+  const statusBar = document.getElementById('status-bar');
+  if (statusBar) {
+    statusBar.textContent = message;
+  }
+}
+
+function setHeroMetric(id, value) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = value;
+  }
+}
+
+function setActiveModule(tabKey) {
+  setHeroMetric('hero-active-module', TAB_LABELS[tabKey] || '工作台');
+}
+
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(s => s.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    setActiveModule(btn.dataset.tab);
     if (btn.dataset.tab === 'analytics') loadAnalytics();
     if (btn.dataset.tab === 'profile') loadProfile();
     if (btn.dataset.tab === 'suggest') loadSuggestionHistory();
@@ -69,10 +98,11 @@ async function loadNotes() {
   const resp = await fetch('/api/notes');
   const notes = await resp.json();
   document.getElementById('note-count').textContent = `共 ${notes.length} 篇`;
+  setHeroMetric('hero-note-total', `共 ${notes.length} 篇`);
 
   const list = document.getElementById('notes-list');
   if (!notes.length) {
-    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-light)">还没有笔记，点击「＋ 添加笔记」开始吧 📕</div>';
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-muted)">还没有笔记，点击“添加笔记”开始建立内容资产库。</div>';
     return;
   }
 
@@ -82,19 +112,19 @@ async function loadNotes() {
         <div class="title">${esc(n.title)}</div>
         <div class="meta">
           ${n.topics ? n.topics.split(/[#,，]/).map(t => t.trim()).filter(Boolean).map(t => `<span class="badge">${esc(t)}</span>`).join(' ') : ''}
-          <span>${n.content_type === 'video' ? '🎬 视频' : '🖼️ 图文'}</span>
+          <span>${n.content_type === 'video' ? '视频' : '图文'}</span>
           <span>${n.publish_date || '无日期'}</span>
         </div>
         <div class="note-stats">
           <span>阅读 ${fmt(n.views)}</span>
-          <span>👍 ${fmt(n.likes)}</span>
-          <span>⭐ ${fmt(n.saves)}</span>
-          <span>💬 ${fmt(n.comments)}</span>
+          <span>点赞 ${fmt(n.likes)}</span>
+          <span>收藏 ${fmt(n.saves)}</span>
+          <span>评论 ${fmt(n.comments)}</span>
         </div>
       </div>
       <div class="note-actions">
-        <button onclick="editNote(${n.id})">✏️ 编辑</button>
-        <button onclick="deleteNote(${n.id})" style="color:#e03131;border-color:#e03131">🗑</button>
+        <button onclick="editNote(${n.id})">编辑</button>
+        <button onclick="deleteNote(${n.id})" style="color:#c3412f;border-color:rgba(195,65,47,0.18)">删除</button>
       </div>
     </div>
   `).join('');
@@ -291,7 +321,7 @@ document.getElementById('btn-gen-profile').addEventListener('click', async () =>
     toast('请求失败: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔄 重新生成';
+    btn.textContent = '重新生成';
   }
 });
 
@@ -349,7 +379,7 @@ document.getElementById('btn-gen-suggest').addEventListener('click', async () =>
     toast('请求失败: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '✨ 生成选题建议';
+    btn.textContent = '生成选题建议';
   }
 });
 
@@ -360,7 +390,7 @@ async function loadSuggestionHistory() {
   const list = document.getElementById('suggestion-history-list');
 
   if (!data.items || !data.items.length) {
-    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-light);padding:20px">暂无历史记录</div>';
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-muted);padding:20px">暂无历史记录</div>';
     return;
   }
 
@@ -370,7 +400,7 @@ async function loadSuggestionHistory() {
         <div class="history-desc">${esc(item.extra_prompt || '(无额外提示)')}</div>
         <div class="history-time">${item.timestamp}</div>
       </div>
-      <button class="btn-ghost" style="font-size:12px;padding:4px 12px" onclick="event.stopPropagation();deleteSuggestionHistory(${idx})">🗑</button>
+      <button class="btn-ghost" style="font-size:12px;padding:4px 12px" onclick="event.stopPropagation();deleteSuggestionHistory(${idx})">删除</button>
     </div>
   `).join('');
 }
@@ -435,7 +465,7 @@ async function loadAnalytics() {
 
   if (!stats.total_notes) {
     document.getElementById('stats-overview').innerHTML =
-      '<div class="card" style="text-align:center;color:var(--text-light)">暂无数据</div>';
+      '<div class="card" style="text-align:center;color:var(--text-muted)">暂无数据</div>';
     return;
   }
 
@@ -528,7 +558,7 @@ document.getElementById('btn-deep-analyze').addEventListener('click', async () =
     toast('请求失败: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🤖 LLM 深度分析';
+    btn.textContent = 'LLM 深度分析';
   }
 });
 
@@ -609,14 +639,14 @@ document.getElementById('btn-gen-content').addEventListener('click', async () =>
     toast('请求失败: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '✨ 生成内容';
+    btn.textContent = '生成内容';
   }
 });
 
 document.getElementById('btn-copy-body').addEventListener('click', () => {
   const bodyDisplay = document.getElementById('content-body-display');
   const raw = bodyDisplay.dataset.raw || bodyDisplay.innerText;
-  navigator.clipboard.writeText(raw).then(() => toast('正文已复制到剪贴板 📋'));
+  navigator.clipboard.writeText(raw).then(() => toast('正文已复制到剪贴板'));
 });
 
 document.getElementById('btn-describe-content-images').addEventListener('click', () => {
@@ -630,7 +660,7 @@ async function loadContentHistory() {
   const list = document.getElementById('content-history-list');
 
   if (!data.items || !data.items.length) {
-    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-light);padding:20px">暂无历史记录</div>';
+    list.innerHTML = '<div class="card" style="text-align:center;color:var(--text-muted);padding:20px">暂无历史记录</div>';
     return;
   }
 
@@ -640,7 +670,7 @@ async function loadContentHistory() {
         <div class="history-desc">${esc(item.description)}</div>
         <div class="history-time">${item.timestamp}</div>
       </div>
-      <button class="btn-ghost" style="font-size:12px;padding:4px 12px" onclick="deleteContentHistory(${idx})">🗑</button>
+      <button class="btn-ghost" style="font-size:12px;padding:4px 12px" onclick="deleteContentHistory(${idx})">删除</button>
     </div>
   `).join('');
 }
@@ -712,12 +742,12 @@ function renderChatMessages() {
   const container = document.getElementById('chat-messages');
   const defaultMsg = chatHistory.length === 0
     ? `<div class="chat-msg assistant">
-         <div class="chat-bubble">你好！我是你的小红书运营 AI 顾问。我可以帮你解答内容创作、运营策略、数据分析等方面的问题。尽管问吧 📕</div>
+         <div class="chat-bubble">你好，我会结合你的笔记、画像与历史分析结果，帮助你判断内容方向、运营动作和创作策略。</div>
        </div>`
     : '';
   container.innerHTML = defaultMsg + chatHistory.map(m => {
     const copyBtn = m.role === 'assistant' && m.content && m.content !== '思考中…'
-      ? `<button class="btn-copy-msg" onclick="copyChatMsg(this)" title="复制">📋</button>`
+      ? `<button class="btn-copy-msg" onclick="copyChatMsg(this)" title="复制">复制</button>`
       : '';
     return `
     <div class="chat-msg ${m.role}">
@@ -733,7 +763,7 @@ function copyChatMsg(btn) {
   const cb = clone.querySelector('.btn-copy-msg');
   if (cb) cb.remove();
   const text = clone.innerText || clone.textContent || '';
-  navigator.clipboard.writeText(text.trim()).then(() => toast('已复制 📋'));
+  navigator.clipboard.writeText(text.trim()).then(() => toast('已复制'));
 }
 
 async function sendChat() {
@@ -947,6 +977,9 @@ async function loadAccounts() {
   select.innerHTML = data.accounts.map(a =>
     `<option value="${a.id}" ${a.id === data.current_id ? 'selected' : ''}>${esc(a.name)}</option>`
   ).join('');
+  const currentAccount = data.accounts.find(a => a.id === data.current_id);
+  setHeroMetric('hero-current-account', currentAccount ? currentAccount.name : '默认账号');
+  setStatusBar(`${data.accounts.length} 个账号 · 当前 ${currentAccount ? currentAccount.name : '默认账号'}`);
   // Also update account list in settings
   renderAccountList(data);
 }
@@ -1037,5 +1070,6 @@ async function deleteAccount(accountId, name) {
 loadAccounts();
 loadNotes();
 loadChatHistory();
+setActiveModule('notes');
 bindImageFileLabel('note-image-files');
 bindImageFileLabel('content-image-files');
